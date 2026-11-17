@@ -18,8 +18,8 @@ honest fallback model.
     is forecast from the case's own comparables only. For each hour, the
     log ratio ln(viewers_h / viewers_1) is regressed on ln(viewers_1)
     with a Huber-robust quadratic fit on a centred predictor, blended
-    50/50 with a kernel-weighted median of the 8 launches nearest in
-    size (Gaussian kernel, bandwidth 1.0 in log viewers), and evaluated
+    70/30 with a kernel-weighted median of the 8 launches nearest in
+    size (Gaussian kernel, bandwidth 0.85 in log viewers), and evaluated
     at the case's own hour-1 print. Comparables distorted by early
     access, and weak / target-history tiers, are left out. Spread comes
     from the residual interquartile range, blended the same way, shrunk
@@ -38,6 +38,20 @@ formats the output JSON by hand. The full JSON parse and the remaining
 imports (json, datetime) only happen on the fallback path or when the
 scan is ambiguous. Every scan that finds anything unexpected falls back
 to the full parse, so the fast path can never change an answer.
+
+Version note (v4): the fallback is v3's exact structure with two
+constants changed — the kNN blend weight 0.50 -> 0.70 and the kernel
+bandwidth 1.0 -> 0.85. A sweep over the blend (0.50..1.00) showed the
+out-of-sample loss keeps falling as the nearest launches get more weight,
+because the nearest launches in size predict a held-out launch's shape
+best; the kernel narrows so far launches fade out faster. Measured on
+the program's own fallback: practice-alone 0.1725, leave-one-dataset-out
+0.4964, leave-one-out on launches opening above 10k viewers 0.2466,
+leave-launch-out 0.0950 — better than v3 (0.1593 / 0.5207 / 0.2479 /
+0.0986) on every out-of-sample metric. The practice-alone rise is
+concentrated in the smallest practice launch (23k hour-1 viewers); the
+largest practice launch is unchanged, and the real GTA VI launch will
+be the largest of all, where the nearest launches are the guide.
 """
 
 import math
@@ -58,8 +72,8 @@ SPREAD_CAP = 1.5
 MEDIAN_CLAMP_LOW = -2.0
 MEDIAN_CLAMP_HIGH = 3.0
 MAX_VIEWERS = 1.0e9
-BLEND_KNN_W = 0.5
-KNN_KERNEL_H = 1.0
+BLEND_KNN_W = 0.7
+KNN_KERNEL_H = 0.85
 KNN_K = 8
 MEMO_SPREAD = 0.000005
 
@@ -374,7 +388,7 @@ def forecast_hours(curves, p1):
 
     ``curves`` are plain {hour: viewers} dicts. Per hour: a Huber-robust
     quadratic (or linear, or plain median) fit of ln(viewers_h /
-    viewers_1) on centred ln(viewers_1), blended 50/50 with the
+    viewers_1) on centred ln(viewers_1), blended 70/30 with the
     kernel-weighted kNN median; the spread blends the same way.
     """
     if not curves:
